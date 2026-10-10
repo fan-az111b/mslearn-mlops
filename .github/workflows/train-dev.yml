@@ -51,27 +51,76 @@ jobs:
           echo "resource_group=$RG_NAME" >> "$GITHUB_OUTPUT"
           echo "workspace=$WS_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Run training job in dev and capture logs
+      - name: Run training job in dev
         id: train
         run: |
           JOB_NAME="diabetes-train-dev-${{ github.run_id }}"
           echo "Running Azure ML job: $JOB_NAME"
+
           az ml job create \
             -f src/job.yml \
             --name "$JOB_NAME" \
             --set inputs.training_data.path=azureml:diabetes-dev-folder@latest \
-            --stream | tee training_output.log
+            --query name -o tsv
 
-      - name: Extract dev metrics from logs
-        id: parse-metrics
+          echo "job_name=$JOB_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for dev training job to complete
         run: |
-          if [ ! -f training_output.log ]; then
-            echo "No training_output.log found to parse metrics." >&2
+          JOB_NAME="${{ steps.train.outputs.job_name }}"
+
+          while true; do
+            STATUS=$(az ml job show \
+              --name "$JOB_NAME" \
+              --query status \
+              -o tsv)
+
+            echo "Azure ML job status: $STATUS"
+
+            case "$STATUS" in
+              Completed)
+                break
+                ;;
+              Failed|Canceled|NotResponding)
+                echo "Azure ML job ended with status: $STATUS" >&2
+                exit 1
+                ;;
+            esac
+
+            sleep 15
+          done
+
+      - name: Download dev training outputs
+        id: download
+        run: |
+          JOB_NAME="${{ steps.train.outputs.job_name }}"
+          mkdir -p downloaded-job
+
+          az ml job download \
+            --name "$JOB_NAME" \
+            --output-name metrics_output \
+            --download-path downloaded-job
+
+          METRICS_FILE=$(find downloaded-job -name metrics.json | head -n 1)
+
+          if [ -z "$METRICS_FILE" ]; then
+            echo "No metrics.json found." >&2
             exit 1
           fi
 
-          ACC=$(grep -o "Accuracy: .*" training_output.log | tail -n 1 | awk '{print $2}') || true
-          AUC=$(grep -o "AUC: .*" training_output.log | tail -n 1 | awk '{print $2}') || true
+          STUDIO_URL=$(az ml job show \
+            --name "$JOB_NAME" \
+            --query services.Studio.endpoint \
+            -o tsv)
+
+          echo "metrics_file=$METRICS_FILE" >> "$GITHUB_OUTPUT"
+          echo "studio_url=$STUDIO_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Extract dev metrics from output artifact
+        id: parse-metrics
+        run: |
+          ACC=$(python -c "import json; print(json.load(open(r'${{ steps.download.outputs.metrics_file }}', encoding='utf-8'))['accuracy'])")
+          AUC=$(python -c "import json; print(json.load(open(r'${{ steps.download.outputs.metrics_file }}', encoding='utf-8'))['auc'])")
 
           echo "Dev accuracy: $ACC"
           echo "Dev AUC: $AUC"
