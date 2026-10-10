@@ -127,6 +127,27 @@ jobs:
           echo "prod_accuracy=$ACC" >> "$GITHUB_OUTPUT"
           echo "prod_auc=$AUC" >> "$GITHUB_OUTPUT"
 
+      - name: Register trained model
+        id: register-model
+        run: |
+          JOB_NAME="${{ steps.train.outputs.job_name }}"
+          MODEL_NAME="diabetes-model"
+          MODEL_VERSION="$(date -u +%Y%m%d%H%M%S)"
+          MODEL_PATH="azureml://jobs/${JOB_NAME}/outputs/model_output/paths/mlflow-model"
+
+          echo "Registering model: ${MODEL_NAME}:${MODEL_VERSION}"
+          echo "Model path: ${MODEL_PATH}"
+
+          az ml model create \
+            --name "$MODEL_NAME" \
+            --version "$MODEL_VERSION" \
+            --type mlflow_model \
+            --path "$MODEL_PATH" \
+            --description "Diabetes model trained by the prod workflow"
+
+          echo "model_name=$MODEL_NAME" >> "$GITHUB_OUTPUT"
+          echo "model_version=$MODEL_VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Comment prod metrics on pull request
         uses: actions/github-script@v7
         with:
