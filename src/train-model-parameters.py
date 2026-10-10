@@ -111,6 +111,12 @@ def save_model(model, output_dir):
     mlflow.sklearn.save_model(
         sk_model=model,
         path=model_path,
+        extra_pip_requirements=[
+            "azureml-inference-server-http",
+            "azureml-ai-monitoring",
+            "azureml-contrib-services",
+            "numpy<2",
+        ],
     )
 
     print(f"Saved MLflow model to {model_path}")
