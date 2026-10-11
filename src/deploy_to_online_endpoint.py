@@ -5,13 +5,10 @@ from azure.ai.ml.entities import (
     DeploymentCollection,
     ManagedOnlineDeployment,
     ManagedOnlineEndpoint,
-    Model,
 )
-from azure.ai.ml.constants import AssetTypes
 from azure.core.exceptions import ResourceNotFoundError
 
 import argparse
-import datetime
 
 
 def get_data_collector() -> DataCollector:
@@ -31,6 +28,8 @@ def parse_args():
     parser.add_argument("--workspace", dest="workspace", required=True)
     parser.add_argument("--endpoint-name", dest="endpoint_name", default="diabetes-endpoint")
     parser.add_argument("--deployment-name", dest="deployment_name", default="blue")
+    parser.add_argument("--model-name", dest="model_name", required=True)
+    parser.add_argument("--model-version", dest="model_version", required=True)
 
     return parser.parse_args()
 
@@ -61,11 +60,12 @@ def create_or_update_deployment(
     ml_client: MLClient,
     endpoint_name: str,
     deployment_name: str,
+    model_name: str,
+    model_version: str,
 ) -> ManagedOnlineDeployment:
-    model = Model(
-        path="./model",
-        type=AssetTypes.MLFLOW_MODEL,
-        description="MLflow diabetes classification model",
+    model = ml_client.models.get(
+        name=model_name,
+        version=model_version,
     )
 
     deployment = ManagedOnlineDeployment(
@@ -100,11 +100,16 @@ def main() -> None:
     endpoint = ensure_endpoint(ml_client, args.endpoint_name)
     print(f"Using endpoint: {endpoint.name}")
 
-    print(f"Creating or updating deployment '{args.deployment_name}'...")
+    print(
+        f"Creating or updating deployment '{args.deployment_name}' "
+        f"with model '{args.model_name}:{args.model_version}'..."
+    )
     deployment = create_or_update_deployment(
         ml_client=ml_client,
         endpoint_name=endpoint.name,
         deployment_name=args.deployment_name,
+        model_name=args.model_name,
+        model_version=args.model_version,
     )
     print(f"Deployment state: {deployment.provisioning_state}")
 
